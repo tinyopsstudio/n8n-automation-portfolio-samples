@@ -1,0 +1,60 @@
+{
+  "name": "Vapi Twilio Voice Agent - Test Event Router",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "vapi-voice-agent-test-event",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "vapi-test-event-webhook",
+      "name": "Vapi Test Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-360, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body || $json; const transcript = String(input.transcript || '').trim(); const callId = String(input.call_id || 'demo-call'); const eventId = String(input.event_id || 'demo-event'); if (!transcript) throw new Error('transcript_required'); const budgetMatch = transcript.match(/(?:GBP|USD|EUR|CHF|\\$|£|€)\\s*([\\d,.]+)\\s*(k)?|([\\d,.]+)\\s*(k)?\\s*(?:GBP|USD|EUR|CHF|dollars?|pounds?|euros?)/i); const budget = budgetMatch ? Math.round(Number(String(budgetMatch[1] || budgetMatch[3]).replace(/,/g, '')) * ((budgetMatch[2] || budgetMatch[4]) ? 1000 : 1)) : null; const teamMatch = transcript.match(/\\b(\\d{1,5})\\s*(?:staff|employees?|people|seats?|users?)\\b/i); const teamSize = teamMatch ? Number(teamMatch[1]) : null; const timeline = /\\b(today|tomorrow|this week|urgent|immediately|asap)\\b/i.test(transcript) ? 'within_7_days' : /\\b(next week|this month|next month|within (?:30|thirty) days)\\b/i.test(transcript) ? 'within_30_days' : /\\b(this quarter|next quarter|within (?:90|ninety) days)\\b/i.test(transcript) ? 'within_90_days' : 'unspecified'; const meetingRequested = /\\b(book|schedule|meeting|calendar|appointment|demo)\\b/i.test(transcript); const handoffRequested = /\\b(transfer|human|person|representative|agent)\\b/i.test(transcript); const positiveIntent = /\\b(interested|move forward|ready|start|book|schedule|buy|purchase|proposal)\\b/i.test(transcript); let score = 0; if (budget !== null) score += budget >= 10000 ? 30 : 20; if (timeline === 'within_7_days' || timeline === 'within_30_days') score += 25; else if (timeline === 'within_90_days') score += 15; if (teamSize !== null) score += teamSize >= 25 ? 20 : 10; if (positiveIntent) score += 25; score = Math.min(100, score); const hotLead = score >= 75; const qualified = score >= 50; const route = hotLead ? 'hot_lead_alert' : qualified ? 'qualified_follow_up' : 'review_queue'; return [{ json: { proof_version: 'vapi-twilio-n8n-demo-1', mode: 'dry_run', live_mutations: false, idempotency_key: `${callId}:${eventId}`, qualification: { score, hot_lead: hotLead, qualified, budget_amount: budget, team_size: teamSize, timeline, meeting_requested: meetingRequested, handoff_requested: handoffRequested }, route, crm_action: { system: String(input.crm || 'hubspot'), operation: 'upsert_contact_and_call_outcome', status: 'preview_only' }, booking_action: meetingRequested ? { operation: 'create_booking_request', status: 'preview_only' } : null, alert_action: hotLead ? { operation: 'notify_high_intent_lead', status: 'preview_only' } : null, handoff_action: { route: input.handoff_enabled && handoffRequested ? 'twilio_conference_preview' : 'not_requested', status: 'preview_only', conference_created: false } } }];"
+      },
+      "id": "validate-score-route",
+      "name": "Validate Score and Route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-80, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "return-dry-run-plan",
+      "name": "Return Dry Run Plan",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [200, 0]
+    }
+  ],
+  "connections": {
+    "Vapi Test Event": {
+      "main": [[{"node": "Validate Score and Route", "type": "main", "index": 0}]]
+    },
+    "Validate Score and Route": {
+      "main": [[{"node": "Return Dry Run Plan", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": [
+    {"name": "voice-ai"},
+    {"name": "vapi"},
+    {"name": "twilio"},
+    {"name": "dry-run"}
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-07-15T00:00:00.000Z",
+  "versionId": "vapi-twilio-test-event-router-v1"
+}
